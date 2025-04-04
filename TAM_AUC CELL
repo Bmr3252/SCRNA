@@ -1,0 +1,256 @@
+suppressPackageStartupMessages({
+  #library(openxlsx)
+  #library(DESeq2)
+  library(ggplot2)
+  #library(ComplexHeatmap)
+  library(dplyr)
+  #library(FactoMineR)
+  #library(factoextra)
+  #library(apeglm)
+  library(Seurat)
+  library(patchwork)
+  #library(circlize)
+  library(enrichplot)# for visualisations
+  #library(slingshot)
+  library(tidyverse)
+  #library(hrbrthemes)
+  #library(viridis)
+  #library(networkD3)
+  #library(nichenetr)
+  #library(singleCellHaystack)
+  #library(scriabin)
+  #library(loomR)
+  #library(sf)
+  #library(msigdbr)
+  #library(scales)
+  #library(survival)
+  #library(survminer)})
+  library(harmony)
+  library(sctransform)
+  library(RColorBrewer) # for a colourful plot
+  library(pheatmap)
+  library(ggupset) # for visualisations
+  library(data.table)
+  #library(sva)
+  
+  library(clusterProfiler)
+  library(data.table)
+  library(easybio)
+  library(clustermole)
+  library(GSEABase)
+  library(GSVA)
+  library(singscore)
+  library("fgsea")
+  library(ggrepel)
+  library(cowplot)
+  library(edgeR)
+  library(Matrix)
+  library(reshape2)
+  library(S4Vectors)
+  library(SingleCellExperiment)
+  library(pheatmap)
+  #library(apeglm)
+  library(png)
+  library(DESeq2)
+  library(RColorBrewer)
+  library(data.table)
+  library(msigdbr)
+})
+#BiocManager::install("msigdbr")
+library(Matrix)
+library(Rtsne)
+library(AUCell)
+library(grDevices)
+library(biomaRt)
+library(msigdb)
+library(msigdbdf)
+#https://bioconductor.org/packages/devel/bioc/vignettes/AUCell/inst/doc/AUCell.html#why-to-use-aucell
+#https://pmc.ncbi.nlm.nih.gov/articles/PMC11586048/#sec28
+
+#bg_path <- "D:/bilal/GSEA BG GENE SET"
+#top10<- readRDS("D:/bilal/SCT TRANSFORMED DATAS/top10genes")
+
+macrophage_cells3<- readRDS("C:/Users/65881/Downloads/FYP/aft 2 sub/macro")
+# Step 1: Access the Seurat object's metadata to identify the clusters
+cluster_column <- macrophage_cells3@meta.data$seurat_clusters  # This column contains cluster assignments
+
+# Step 2: Subset the Seurat object to exclude cells from cluster "0"
+macrophage_cells3 <- subset(macrophage_cells3, seurat_clusters == "2")
+
+
+exprMatrix <- macrophage_cells3@assays$RNA@layers$counts
+
+
+#Get the top 10 genes (e.g., from 'top10' data frame)
+#top10_genes <- top10$gene  # This is a vector of gene names
+gene_names <- rownames(macrophage_cells3@assays$RNA)
+rownames(exprMatrix) <- gene_names
+head(rownames(exprMatrix))
+
+
+# Check the new row names
+head(rownames(exprMatrix))
+
+# Subset the expression matrix to get only the top 10 genes
+exprMatrix_top10 <- exprMatrix
+# Convert column names to character vector (if necessary)
+colnames(exprMatrix_top10) <- as.character(colnames(exprMatrix_top10))
+# If no cell identifiers are available, generate temporary names
+colnames(exprMatrix_top10) <- paste0("Cell_", seq_len(ncol(exprMatrix_top10)))
+# Now, apply make.unique() to ensure unique column names
+colnames(exprMatrix_top10) <- make.unique(colnames(exprMatrix_top10))
+
+
+# Convert the resulting matrix to a sparse matrix (if it's not already in sparse format)
+library(Matrix)
+exprMatrix_top10_sparse <- as(exprMatrix_top10, "dgCMatrix")
+
+
+#update.packages(ask = FALSE)
+
+# (Gene sets: random genes)
+bg_path <- "C:/Users/65881/Downloads/FYP/macro_cluster_gmt"
+# Path to your .gmt files
+gene_set_files <- list.files(path = bg_path, pattern = '.txt', full.names = TRUE)
+# Function to load and clean gene set files
+load_gene_sets <- function(file_path) {
+  # Read the file into a vector, remove extra spaces and split by lines
+  #gene_set <- read.delim(file_path,stringsAsFactor = FALSE)
+  gene_set <- readLines(file_path)
+  
+  # Split each line into a vector of genes; assuming genes are space-separated
+  gene_set <- strsplit(gene_set, "\t")
+  # Flatten the list into a vector (no nested lists)
+  gene_set <- unlist(gene_set)
+  
+  # Remove empty lines or any non-gene data
+  gene_set <- gene_set[gene_set != ""]
+  
+  # Remove duplicate genes
+  gene_set <- unique(gene_set)
+  
+  return(gene_set)
+}
+# Apply the function to all gene set files
+gene_sets_list <- lapply(gene_set_files, load_gene_sets)
+# Assign names to the list based on file names (optional, but helpful for identification)
+names(gene_sets_list) <- gsub(".txt", "", basename(gene_set_files))
+# Check the first few genes in each gene set
+head_gene_sets <- lapply(gene_sets_list, head)
+# Print out the first few genes of each gene set for inspection
+print(head_gene_sets)
+# Check the size of each gene set (i.e., number of genes)
+gene_set_sizes <- sapply(gene_sets_list, length)
+# Print out the size of each gene set to verify that all genes were read
+print(gene_set_sizes)
+# Remove NA values (genes that didn't map) from the gene sets
+geneset <- lapply(gene_sets_list, function(genes) genes[!is.na(genes)])
+
+
+# Find the common genes between the expression matrix and gene sets
+common_genes <- intersect(rownames(exprMatrix_top10), unlist(geneset))
+
+# Subset the expression matrix and gene sets to only include the common genes
+exprMatrix_filtered <- exprMatrix_top10_sparse[common_genes, ]
+GOBP_filtered <- lapply(geneset, function(genes) intersect(genes, common_genes))
+
+# Ensure gene identifiers in gene_sets_list match those in exprMatrix_filtered
+# For example, convert gene identifiers to uppercase if necessary
+gene_sets_list <- lapply(gene_sets_list, toupper)
+rownames(exprMatrix_filtered) <- toupper(rownames(exprMatrix_filtered))
+
+#Step 3: Compute Gene Ratio (genes used / total genes in set)
+# Correct gene ratio calculation
+gene_ratios <- sapply(names(GOBP_filtered), function(gene_set) {
+  # Get the genes in the gene set that overlap with the expression matrix
+  genes_in_set <- length(GOBP_filtered[[gene_set]])  # Genes that overlap with exprMatrix
+  
+  # Get the total number of genes in the original gene set
+  total_genes <- length(gene_sets_list[[gene_set]])  # Total genes in the original gene set
+  
+  # Calculate the ratio
+  if (total_genes > 0) {
+    return(genes_in_set / total_genes)
+  } else {
+    return(NA)  # Avoid division by zero
+  }
+})
+# Check the contents of each gene set
+#lapply(gene_sets, print)
+
+# Build gene-expression rankings for each cell
+cells_rankings <- AUCell_buildRankings(exprMatrix_filtered, plotStats=TRUE,nCores=1)
+# Calculate enrichment scores
+save(cells_rankings, file="cells_rankings_cluster2.RData")
+
+saveRDS(cells_rankings, file = "cells_rankings_cluster2.rds")
+cells_rankings<- readRDS(file = "cells_rankings_cluster2.rds")
+
+# Extract the ranking matrix from the cells_rankings object
+ranking_matrix <- assay(cells_rankings, "ranking")
+
+# Convert it to a data frame for better readability
+ranking_df <- as.data.frame(ranking_matrix)
+
+# Optionally, set the row names to the gene names for easy reference
+rownames(ranking_df) <- rownames(ranking_matrix)
+save(ranking_df, file="GENERANKING_cluster2.RData]]")
+saveRDS(ranking_df, file = "GENERANKING_cluster2.rds")
+
+
+
+#GOBP_filtered <- GOBP_filtered[sapply(GOBP_filtered, length) > 0]
+
+
+#Calculate enrichment for the gene signatures (AUC)
+cells_AUC <- AUCell_calcAUC(GOBP_filtered, cells_rankings, aucMaxRank=nrow(cells_rankings)*0.05)
+save(cells_AUC, file="cells_AUCenrichement_cluster2.RData")
+saveRDS(cells_AUC, file = "cells_AUCenrichement_cluster2.rds")
+
+#Score gene signatures
+#cells_AUC <- AUCell_run(exprMatrix_filtered, GOBP_filtered )
+#save(cells_AUC, file="cells_AUCscore_cluster2.csv")
+
+
+#------------------- Visualize t-SNE and color by AUC scores for the top 6 gene sets
+# Step 1: Extract the AUC matrix from the AUCell object
+auc_matrix <- getAUC(cells_AUC)  # This extracts the AUC matrix from the AUCell object
+
+# Step 2: Compute the average AUC value per gene set (columns)
+mean_auc_per_gene_set <- apply(auc_matrix, 1, mean)
+
+# Convert the sparse matrix to a dense matrix
+exprMatrix_filtered_dense <- as.matrix(exprMatrix_filtered)
+
+# Now apply the singscore
+library(singscore)
+rankData <- rankGenes(exprMatrix_filtered_dense)
+
+
+
+heatmap_matrix <- matrix(mean_auc_per_gene_set, nrow = 1, dimnames = list("AUC", names(mean_auc_per_gene_set)))
+heatmap(heatmap_matrix, col = heat.colors(10), scale = "none")
+
+
+
+
+
+
+
+
+
+dev.off()  # Closes any active graphics device
+
+library(pheatmap)
+
+# Convert the named vector into a single-row matrix
+heatmap_matrix <- matrix(mean_auc_per_gene_set, nrow = 1, 
+                         dimnames = list("AUC_cluster2", names(mean_auc_per_gene_set)))
+
+# Generate heatmap
+pheatmap(heatmap_matrix, 
+         cluster_rows = FALSE,  # Do not cluster rows (since there's only one)
+         cluster_cols = TRUE,   # Cluster columns
+         display_numbers = TRUE, # Show values on heatmap
+         color = colorRampPalette(c("blue", "white", "red"))(100))
+
