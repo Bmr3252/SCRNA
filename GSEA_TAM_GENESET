@@ -1,0 +1,134 @@
+suppressPackageStartupMessages({
+  #library(openxlsx)
+  #library(DESeq2)
+  library(ggplot2)
+  #library(ComplexHeatmap)
+  library(dplyr)
+  #library(FactoMineR)
+  #library(factoextra)
+  #library(apeglm)
+  library(Seurat)
+  library(patchwork)
+  #library(circlize)
+  library(enrichplot)# for visualisations
+  #library(slingshot)
+  library(tidyverse)
+  #library(hrbrthemes)
+  #library(viridis)
+  #library(networkD3)
+  #library(nichenetr)
+  #library(singleCellHaystack)
+  #library(scriabin)
+  #library(loomR)
+  #library(sf)
+  #library(msigdbr)
+  #library(scales)
+  #library(survival)
+  #library(survminer)})
+  library(harmony)
+  library(sctransform)
+  library(RColorBrewer) # for a colourful plot
+  library(pheatmap)
+  library(ggupset) # for visualisations
+  library(data.table)
+  #library(sva)
+  
+  library(clusterProfiler)
+  library(data.table)
+  library(easybio)
+  library(clustermole)
+  library(GSEABase)
+  library(GSVA)
+  library(singscore)
+  library("fgsea")
+  library(ggrepel)
+  library(cowplot)
+  library(edgeR)
+  library(Matrix)
+  library(reshape2)
+  library(S4Vectors)
+  library(SingleCellExperiment)
+  library(pheatmap)
+  #library(apeglm)
+  library(png)
+  library(DESeq2)
+  library(RColorBrewer)
+  library(data.table)
+  library(msigdbr)
+})
+
+#https://biostatsquid.com/fgsea-tutorial-gsea/
+#https://github.com/Lindseynicer/Analysing-10X-ScRNA-data-Wang-et-al-2020-Nat-Commun-/blob/main/Modified_script_forWangetal2020NatCom.R
+
+
+# Set relevant paths
+list.files()
+#macro
+in_path <-readRDS("C:/Users/65881/Downloads/FYP/aft 2 sub/macro")
+
+#fibro
+#in_path <-readRDS("C:/Users/65881/Downloads/FYP/aft 2 sub/CAF_dataset")
+Idents(in_path) <- in_path$seurat_clusters
+cluster.marker<-FindMarkers(in_path, ident.1 = "7", min.pct = 0.20)
+cluster.marker$gene <- rownames(cluster.marker)
+
+
+library(curl)
+library(biomaRt)
+gene_id <- getBM(attributes = c("ensembl_gene_id", "external_gene_name", "entrezgene_id"),
+                 mart = useDataset("hsapiens_gene_ensembl", useMart("ensembl")))
+
+cluster.marker <- merge(cluster.marker, gene_id[, c(2, 3)], by.x = "gene", by.y = "external_gene_name")
+cluster.marker.filt <- cluster.marker
+cluster.marker.filt <- cluster.marker.filt[!duplicated(cluster.marker.filt$entrezgene_id),]
+#PG.markers.7.filt <- PG.markers.7[which(PG.markers.7$p_val_adj < 0.05),]
+genelist <- cluster.marker$avg_log2FC
+names(genelist) <- cluster.marker$entrezgene_id
+genelist <- sort(genelist, decreasing = TRUE)
+
+# to do kegg 
+#KEGG_gene_sets <-msigdbr(species = "human", collection = "C2", subcollection = "CP:REACTOME"  )%>% dplyr::select(gs_name, entrez_gene)
+#KEGG<- split(x = KEGG_gene_sets$entrez_gene, f = KEGG_gene_sets$gs_name)
+
+
+
+
+KEGG_gene_sets <- msigdbr(species = "human", collection = "C5", subcollection = "GO:BP") %>%
+  dplyr::select(gs_name, ncbi_gene)
+
+KEGG <- split(x = KEGG_gene_sets$ncbi_gene, f = KEGG_gene_sets$gs_name)
+
+
+
+
+# Remove NAs in the genelist
+genelist <- genelist[!is.na(names(genelist))]
+# Remove duplicates by averaging rankings for the same gene
+genelist <- tapply(genelist, names(genelist), mean)
+# Add small random noise to break ties
+genelist <- genelist + runif(length(genelist), min = -1e-6, max = 1e-6)
+
+fgseaRes <- fgsea(pathways = KEGG, 
+                  stats    = genelist,
+                  nproc = 1,
+                  minSize  = 15,
+                  maxSize  = 800)  
+
+## 6. Check results ------------------------------------------------------
+# Top 6 enriched pathways (ordered by p-val)
+head(fgseaRes[order(pval), ])
+
+sum(fgseaRes[, padj < 0.05])
+sum(fgseaRes[, pval < 0.05])
+
+
+topPathwaysUp <- fgseaRes[ES > 0][head(order(pval), n = 3), pathway]
+topPathwaysDown <- fgseaRes[ES < 0][head(order(pval), n = 3), pathway]
+topPathways <- c(topPathwaysUp, rev(topPathwaysDown))
+#pdf(file = paste0(filename, '_gsea_top30pathways.pdf'), width = 20, height = 15)
+plotGseaTable(KEGG[topPathways], stats = genelist, fgseaRes = fgseaRes, gseaParam = 0.5)
+#dev.off()
+# plot the most significantly enriched pathway
+plotEnrichment(KEGG[[head(fgseaRes[order(padj), ], 1)$pathway]],
+               genelist) + 
+  labs(title = head(fgseaRes[order(padj), ], 1)$pathway)
