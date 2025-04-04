@@ -1,0 +1,1113 @@
+#new code with integ
+
+#new code with integ
+
+suppressPackageStartupMessages({
+  #library(openxlsx)
+  #library(DESeq2)
+  library(ggplot2)
+  #library(ComplexHeatmap)
+  library(dplyr)
+  #library(FactoMineR)
+  #library(factoextra)
+  #library(apeglm)
+  library(Seurat)
+  library(patchwork)
+  #library(circlize)
+  library(enrichplot)# for visualisations
+  #library(slingshot)
+  library(tidyverse)
+  #library(hrbrthemes)
+  #library(viridis)
+  #library(networkD3)
+  #library(nichenetr)
+  #library(singleCellHaystack)
+  #library(scriabin)
+  #library(loomR)
+  #library(sf)
+  #library(msigdbr)
+  #library(scales)
+  #library(survival)
+  #library(survminer)})
+  library(harmony)
+  library(sctransform)
+  library(RColorBrewer) # for a colourful plot
+  library(pheatmap)
+  library(ggupset) # for visualisations
+  library(data.table)
+  #library(sva)
+
+  library(clusterProfiler)
+  library(data.table)
+  library(easybio)
+  library(clustermole)
+  library(GSEABase)
+  library(GSVA)
+  library(singscore)
+  library("fgsea")
+  library(ggrepel)
+  library(cowplot)
+  library(edgeR)
+  library(Matrix)
+  library(reshape2)
+  library(S4Vectors)
+  library(SingleCellExperiment)
+  library(pheatmap)
+  library(apeglm)
+  library(png)
+  library(DESeq2)
+  library(RColorBrewer)
+  library(data.table)
+  
+})
+
+gc()
+memory.limit(9999999999)
+
+all <- CreateSeuratObject(counts = combined_10patients@assays$RNA@counts, meta.data = combined_10patients@meta.data,min.cells = 3)
+ls()
+DefaultAssay(all) <- "RNA"#reset seurat
+
+#scRNA-seq
+#these steps have already been donw on the data set
+
+#all <- combined_10patients# counts and meta represent counts and metadata of downloaded data
+all[["percent_mt"]] <- PercentageFeatureSet(all, pattern="^MT-")
+# Visualize QC metrics as a violin plot
+VlnPlot(all, features = c("nFeature_RNA", "nCount_RNA", "percent_mt"), ncol = 3)
+# FeatureScatter is typically used to visualize feature-feature relationships, but can be used
+# for anything calculated by the object, i.e. columns in object metadata, PC scores etc.
+
+plot1 <- FeatureScatter(all, feature1 = "nCount_RNA", feature2 = "percent_mt")
+plot2 <- FeatureScatter(all, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot1 + plot2
+
+# Ensure the meta data contains the patient IDs
+unique_patients <- unique(all@meta.data$patientID)
+
+# Randomly select 5 unique patient IDs
+#set.seed(123) # For reproducibility
+#selected_patients <- sample(unique_patients, 4)
+
+# Subset the Seurat object to include only the selected patients
+#all<-subset(all, subset = patientID %in% selected_patients)
+# Check the result
+#table(all@meta.data$patientID)
+
+
+all <- subset(all, nFeature_RNA > 500 & nFeature_RNA < 6000 & percent_mt < 10)#change to 15 percentage>> nick code
+#all <- subset(all,nFeature_RNA > 200 & nFeature_RNA < 7000 & percent_mt < 10)#paper code DImension 17 ,resolution0.6
+
+# Increase the maximum allowed size for futures to 4 GB (or more, depending on your needs)
+options(future.globals.maxSize = 10 * 1024^3)  # 2 GB
+conserve.memory=TRUE
+#memory.limit(size = 16000) # Increase to 16 GB, adjust as necessary
+
+# Save an object to a file
+saveRDS(all, file = "D:/bilal/SCT TRANSFORMED DATAS/Preinteg_data")
+
+# Read the object from the RDS file
+
+all<- readRDS("D:/bilal/SCT TRANSFORMED DATAS/Preinteg_data")
+getwd()
+
+
+#------------------------------------------
+# try both integration (general & SCT transform ) see which is one is better,>>before integration seem to be we
+#before integ
+#Perform integration with SCTransform-normalized datasets>>https://satijalab.org/seurat/articles/integration_introduction
+all[["RNA"]] <- split(all[["RNA"]],f=all$patientID)
+all <- SCTransform(all)
+gc()
+all <- RunPCA(all)
+
+# Save an object to a file
+saveRDS(all, file = "D:/bilal/SCT TRANSFORMED DATAS/PostSCT")
+
+# Read the object from the RDS file
+
+all<- readRDS("D:/bilal/SCT TRANSFORMED DATAS/PostSCT")
+ElbowPlot(all)
+
+
+#all <- RunUMAP(all, reduction = "harmony", verbose = F, assay = "SCT", dims = 1:19)
+
+# Visualization
+#DimPlot(all, reduction = "umap", group.by = c("patientID", "new_cell_type"))
+
+#DimPlot(all, reduction = "umap", split.by = "patientID",group.by = c("new_cell_type"))
+
+#after integ
+#harmony- version 1
+all <- IntegrateLayers(object = all, method = HarmonyIntegration, normalization.method = "SCT",orig.reduction = "pca", new.reduction = "harmony",
+                       verbose = FALSE)
+all <- RunUMAP(all, dims = 1:20, reduction = "harmony")
+all <- FindNeighbors(all, reduction = "umap", dims = 1:2)
+all <- FindClusters(all, resolution = 0.1,reduction = "umap")
+ #17 can try 20>>following the vignette
+# just to observe the differenc of using umap on neigbours insteads of vice vera
+
+
+##all <- RunHarmony(all, group.by.vars = "origin", verbose = T, assay.use = "SCT", max.iter.harmony = 15, tau = 300)
+##all <- RunUMAP(all, dims = 1:20, reduction = "harmony") #17 can try 20>>following the vignette
+##ammended to harmony."integrated.cca"
+
+
+DimPlot(all, reduction = "umap", group.by = c("patientID", "new_cell_type"))#split the graph according to patients to see the concentration in each cluster,*use split.by
+DimPlot(all, reduction = "umap", split.by = "patientID",group.by = c("new_cell_type"))
+DimPlot(all,reduction = "umap",group.by = "SCT_snn_res.0.1")# wrong resolution
+all@reductions$
+all$SCT_snn_res.0.1
+# Save an object to a file
+saveRDS(all, file = "D:/bilal/SCT TRANSFORMED DATAS/my_data_14")
+
+# Read the object from the RDS file
+
+all<- readRDS("D:/bilal/SCT TRANSFORMED DATAS/my_data_14")
+getwd()
+
+
+# Run PrepSCTFindMarkers to prepare the data
+all <- PrepSCTFindMarkers(all)
+# Check the number of total counts per cell
+summary(all$nCount_RNA)
+# Check the identity classes of the Seurat object
+table(all$seurat_clusters)
+levels(Idents(all))
+
+all$oldcelltype.patientID <- paste(all$new_cell_type, all$patientID,sep = "_")
+Idents(all) <- "oldcelltype.patientID"
+table(Idents(all))
+# Now run FindMarkers
+#all.markers <- FindAllMarkers(all, logfc.threshold = 0.25)%>% .[order(.$avg_log2FC, decreasing=T),] %>% .[order(.$cluster),]
+all.markers <- FindAllMarkers(all,only.pos=TRUE,logfc.threshold = 0.25, return.thresh = 1,verbose=FALSE)%>% .[order(.$avg_log2FC, decreasing=T),] %>% .[order(.$cluster),]
+
+
+
+markerTop50Matched <- matchCellMarker2(marker = all.markers, n = 50, spc = "Human")
+markerTop50Matched[, head(.SD, 3), by = cluster][, 1:4] |> knitr::kable()#whats this
+plotPossibleCell(markerTop50Matched[, head(.SD), by = cluster], min.uniqueN = 2)
+cl2cell <- markerTop50Matched[, head(.SD, 1), by = .(cluster)]
+cl2cell <- setNames(cl2cell[["cell_name"]], cl2cell[["cluster"]])
+cl2cell
+
+#single R Annotation as a reference
+sp.immune <- celldex::MonacoImmuneData()
+pred.all <- SingleR::SingleR(
+  test = LayerData(all),
+  ref = list(sp.immune),
+  assay.type.test = 1,
+  labels = list(sp.immune$label.main)
+)
+all@meta.data[["CellMarker2.0"]] <- cl2cell[as.character(Idents(all))]
+
+
+all@meta.data[["SingleR"]] <- pred.all[["labels"]]
+pCellMarker2 <- DimPlot(all,
+                        reduction = "umap",
+                        label = TRUE, label.size = 4,
+                        pt.size = 0.8, repel = TRUE,
+                        group.by = c("CellMarker2.0")
+                        
+)+
+  scale_color_manual(values = pals::brewer.paired(39))
+
+pSingleR <- DimPlot(all,
+                    reduction = "umap", repel = TRUE,
+                    label = TRUE,
+                    label.size = 4,
+                    pt.size = 0.8,
+                    group.by = "patientID",
+) 
+scale_color_manual(values = pals::brewer.paired(37))
+patchwork::wrap_plots(A = pCellMarker2, B = pSingleR, ncol = 2)
+
+# Save an object to a file
+saveRDS(all, file = "D:/bilal/SCT TRANSFORMED DATAS/postanot")
+
+# Read the object from the RDS file
+
+all<- readRDS("D:/bilal/SCT TRANSFORMED DATAS/postanot")
+#-----------------------------------------------------------
+#----------------------------------------------------
+#epithelial
+
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("KRT7", "KRT17"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+A<-FeaturePlot(all,features = c("KRT7", "KRT17"))
+A
+#salivary
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("STATH"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+B<-FeaturePlot(all,features = c( "STATH"))
+B
+
+#fibroblasts 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("COL1A2"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+C<-FeaturePlot(all,features = c("COL1A2"))
+C
+
+#endothelial 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("PECAM1"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+D<-FeaturePlot(all,features = c("PECAM1"))
+D
+
+#immune 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("PTPRC"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+E<-FeaturePlot(all,features = c("PTPRC"))
+E
+
+#T cell 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("CD3E", "NKG7"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+F<-FeaturePlot(all,features = c("CD3E", "NKG7"))
+F
+
+#NK cell 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("NKG7","XCL2"),group.by = c("CellMarker2.0"),
+       pt.size = 0.2)
+G<-FeaturePlot(all,features = c("NKG7","XCL2"))
+
+#B cell 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("CD79A"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+H<-FeaturePlot(all,features = c("CD79A"))
+H
+
+#plasma cell 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("IGHG1"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+I<-FeaturePlot(all,features = c("IGHG1"))
+I
+
+#mast cell 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("TPSAB1"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+J<-FeaturePlot(all,features = c("TPSAB1"))
+J
+
+#pdc cell 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("LILR4"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+K<-FeaturePlot(all,features = c("LILR4"))
+K
+#macrophages cell 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(all, features = c("CD163"),group.by = c("CellMarker2.0"),
+        pt.size = 0.2)
+L<-FeaturePlot(all,features = c("CD163"),label = "Macrophages")
+L
+
+
+#PLOT FONT AMMENDMENTS 
+#B + ggtitle("Fibroblast(COL1A2)") +
+ # theme(
+  #  plot.title = element_text(size = 50),   # Title font size
+  #)
+
+
+
+
+
+
+
+
+
+#relabel cluster
+
+combined_cluster_mapping <- c(
+  "Naive CD8+ T cell" = "Immune", 
+  "Regulatory T(Treg) cell" = "T cell",
+  "T helper 17(Th17) cell" = "T cell",
+  "T cell" = "T cell",
+  "Ciliated cell" = "Immune",
+  "Natural killer cell" = "NK",
+  "Monocyte" = "Immune",
+  "CD4+ T cell" = "T cell",
+  "CD8+ T cell" = "T cell",
+  "Megakaryocyte" = "Immune",
+  "Myocyte" = "Immune",
+  "Dendritic cell" = "Dendritic cell",
+  "Mature luminal cell" = "Epithelial",
+  "Mesendodermal cell" = "Plasma", 
+  "Plasma cell" = "Plasma",
+  "Cardiomyocyte" = "Epithelial", 
+  "Retinal ganglion cell" = "Epithelial", 
+  "Inhibitory neuron" = "Epithelial", 
+  "Epithelial cell" = "Epithelial", 
+  "Progenitor cell" = "Epithelial",
+  "Mesothelial cell" = "Epithelial",
+  "Oligodendrocyte" = "Epithelial",
+  "Proximal tubular cell" = "Endothelial", 
+  "Endothelial cell" = "Endothelial",
+  "Goblet cell" = "Salivary",
+  "Stem cell" = "Fibroblast", 
+  "Neuron" = "Fibroblast", 
+  "Microglial cell" = "Fibroblast", 
+  "Fibroblast" = "Fibroblast", 
+  "M1 macrophage" = "Fibroblast", 
+  "Astrocyte" = "Fibroblast", 
+  "Excitatory neuron" = "Fibroblast", 
+  "Cancer cell" = "Fibroblast", 
+  "Pericyte" = "Fibroblast", 
+  "Smooth muscle cell" = "Fibroblast", 
+  "B cell" = "B", 
+  "Mast cell" = "Mast",
+  "Plasmacytoid dendritic cell(pDC)" = "pDC"
+  
+)
+
+# Create a new metadata column for the combined clusters
+all$combined_cell_types <- as.character(all$CellMarker2.0)  # Assuming `CellMarker2.0` has the original cell type labels
+
+# Apply the mapping to assign each cell a broader group label
+all$combined_cell_types <- plyr::mapvalues(
+  all$combined_cell_types, 
+  from = names(combined_cluster_mapping), 
+  to = combined_cluster_mapping
+)
+
+# Set the new identities based on the combined labels
+Idents(all) <- "combined_cell_types"
+
+DimPlot(all,
+                          reduction = "umap",
+                          label = TRUE, label.size = 8,
+                          pt.size = 0.8, repel = TRUE,
+                          group.by = c("combined_cell_types")+
+          scale_color_manual(values = pals::brewer.paired(10))  # Adjust colors if necessary
+        
+        )
+# Save an object to a file
+saveRDS(all, file = "D:/bilal/SCT TRANSFORMED DATAS/post_combine")
+
+# Read the object from the RDS file
+
+all<- readRDS("D:/bilal/SCT TRANSFORMED DATAS/post_combine")
+#----------------------------------------------
+# Subset out the cells with the 'Macrophage' annotation
+macrophage_cells <- subset(all, subset = combined_cell_types == "Macrophage")  # Change "Macrophage" to the relevant group
+
+ 
+
+DimPlot(macrophage_cells, 
+                       reduction = "umap", 
+                       label = TRUE, 
+                       label.size = 4, 
+                       pt.size = 0.8, 
+                       repel = TRUE, 
+                       group.by = "CellMarker2.0") +
+  scale_color_manual(values = pals::brewer.paired(10))  # Adjust the color scale
+
+macrophage_cells1<- RunUMAP(macrophage_cells,dims=1:20,resolution=0.1)
+macrophage_cells1<- FindNeighbors(macrophage_cells1,dims=1:2,resolution=0.25,reduction = "umap")
+macrophage_cells1<- FindClusters(macrophage_cells1,dims=1:20,resolution=0.25)
+
+DimPlot(macrophage_cells1, reduction = "umap", label = FALSE, pt.size = 2.5, repel = TRUE, split.by = NULL)+
+  scale_color_manual(values = pals::brewer.paired(20))
+  
+macrophage_cells1$seurat_clusters <- as.character(macrophage_cells1$seurat_clusters)
+
+# Run PrepSCTFindMarkers to prepare the data
+# Prepare Seurat object without adjusting for UMI counts>>recorrect umi in findallmarker is the main
+macrophage_cells1 <- PrepSCTFindMarkers(macrophage_cells1)
+# Check the number of total counts per cell
+summary(macrophage_cells1$nCount_RNA)
+# Check the identity classes of the Seurat object
+table(macrophage_cells1$seurat_clusters)
+levels(Idents(macrophage_cells1))
+
+macrophage_cells1$oldcelltype.patientID <- paste(macrophage_cells1$new_cell_type, macrophage_cells1$patientID,sep = "_")
+Idents(macrophage_cells1) <- "oldcelltype.patientID"
+table(Idents(macrophage_cells1))
+# Now run FindMarkers
+#all.markers <- FindAllMarkers(all, logfc.threshold = 0.25)%>% .[order(.$avg_log2FC, decreasing=T),] %>% .[order(.$cluster),]
+macro.markers <- FindAllMarkers(macrophage_cells1,only.pos=TRUE,logfc.threshold = 0.25, return.thresh = 1,verbose=FALSE,recorrect_umi = FALSE)%>% .[order(.$avg_log2FC, decreasing=T),] %>% .[order(.$cluster),]
+
+# Sort the markers by avg_log2FC and cluster
+macro.markers <- macro.markers[order(macro.markers$avg_log2FC, decreasing = TRUE),]
+macro.markers <- macro.markers[order(macro.markers$cluster),]
+
+
+# Now extract the top 5 genes for each cluster
+top_genes_per_cluster <- macro.markers %>%
+  group_by(cluster) %>%
+  slice_head(n = 50) %>%
+  ungroup()
+
+# Display the result
+top_genes_per_cluster
+
+# Save an object to a file
+saveRDS(macrophage_cells1, file = "D:/bilal/SCT TRANSFORMED DATAS/macro")
+
+# Read the object from the RDS file
+
+macrophage_cells1<- readRDS("D:/bilal/SCT TRANSFORMED DATAS/macro")
+getwd()
+
+DimPlot(macrophage_cells1, 
+        reduction = "umap", 
+        label = TRUE, 
+        label.size = 4, 
+        pt.size = 0.8, 
+        repel = TRUE)
+
+
+
+pCellMarker2 <- DimPlot(macrophage_cells1,
+                        reduction = "umap",
+                        label = TRUE, label.size = 4,
+                        pt.size = 0.8, repel = TRUE,
+                        group.by = c("CellMarker2.0")
+                        
+)+
+  scale_color_manual(values = pals::brewer.paired(39))
+
+pSingleR <- DimPlot(macrophage_cells1,
+                    reduction = "umap", repel = TRUE,
+                    label = TRUE,
+                    label.size = 4,
+                    pt.size = 0.8,
+                    group.by = "patientID",
+) 
+scale_color_manual(values = pals::brewer.paired(37))
+patchwork::wrap_plots(A = pCellMarker2, B = pSingleR, ncol = 2)
+
+#--------Differential expression testinghttps://satijalab.org/seurat/articles/de_vignette
+macrophage_cells1<-NormalizeData(macrophage_cells1)
+Idents(macrophage_cells1) <- "seurat_clusters"
+# Find DE features between all pairs of clusters
+macro.de.markers0 <- FindMarkers(macrophage_cells1, ident.1 = 0, ident.2 = NULL, only.pos = TRUE)
+macro.de.markers0 <- macro.de.markers0[
+  macro.de.markers0$p_val_adj < 0.05 & 
+    abs(macro.de.markers0$avg_log2FC) > 1 , 
+]
+macro.de.markers0 <- macro.de.markers0[order(macro.de.markers0$pct.2), ]
+# view results
+head(macro.de.markers0)
+
+
+# Find DE features between all pairs of clusters
+macro.de.markers1 <- FindMarkers(macrophage_cells1, ident.1 = 1, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers1 <- macro.de.markers1[
+  macro.de.markers1$p_val_adj < 0.05 & 
+    abs(macro.de.markers1$avg_log2FC) > 1 , 
+]
+macro.de.markers1 <- macro.de.markers1[order(macro.de.markers1$pct.2), ]
+# view results
+head(macro.de.markers1)
+
+# Find DE features between all pairs of clusters
+macro.de.markers2 <- FindMarkers(macrophage_cells1, ident.1 = 2, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers2 <- macro.de.markers2[
+  macro.de.markers2$p_val_adj < 0.05  & 
+    abs(macro.de.markers2$avg_log2FC) > 1 , 
+]
+macro.de.markers2 <- macro.de.markers2[order(macro.de.markers2$pct.2), ]
+# view results
+head(macro.de.markers2)
+
+# Find DE features between all pairs of clusters
+macro.de.markers3 <- FindMarkers(macrophage_cells1, ident.1 = 3, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers3<-macro.de.markers3[
+  macro.de.markers3$p_val_adj < 0.05 & abs(macro.de.markers3$avg_log2FC) > 1, 
+]
+macro.de.markers3 <- macro.de.markers3[order(macro.de.markers3$pct.2), ]
+# view results
+head(macro.de.markers3)
+
+# Find DE features between all pairs of clusters
+macro.de.markers4 <- FindMarkers(macrophage_cells1, ident.1 = 4, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers4<-macro.de.markers4[
+  macro.de.markers4$p_val_adj < 0.05 & abs(macro.de.markers4$avg_log2FC) > 1, 
+]
+macro.de.markers4 <- macro.de.markers4[order(macro.de.markers4$pct.2), ]
+# view results
+head(macro.de.markers4)
+
+# Find DE features between all pairs of clusters
+macro.de.markers5 <- FindMarkers(macrophage_cells1, ident.1 = 5, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers5<-macro.de.markers5[
+  macro.de.markers5$p_val_adj < 0.05 & abs(macro.de.markers5$avg_log2FC) > 1, 
+]
+macro.de.markers5 <- macro.de.markers5[order(macro.de.markers5$pct.2), ]
+# view results
+head(macro.de.markers5)
+
+# Find DE features between all pairs of clusters
+macro.de.markers6 <- FindMarkers(macrophage_cells1, ident.1 = 6, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers6<-macro.de.markers6[
+  macro.de.markers6$p_val_adj < 0.05 & abs(macro.de.markers6$avg_log2FC) > 1, 
+]
+macro.de.markers6 <- macro.de.markers6[order(macro.de.markers6$pct.2), ]
+# view results
+head(macro.de.markers6)
+
+# Find DE features between all pairs of clusters
+macro.de.markers7 <- FindMarkers(macrophage_cells1, ident.1 = 7, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers7<-macro.de.markers7[
+  macro.de.markers7$p_val_adj < 0.05 & abs(macro.de.markers7$avg_log2FC) > 1, 
+]
+macro.de.markers7 <- macro.de.markers7[order(macro.de.markers7$pct.2), ]
+# view results
+head(macro.de.markers7)
+
+# Find DE features between all pairs of clusters
+macro.de.markers8 <- FindMarkers(macrophage_cells1, ident.1 = 8, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers8<-macro.de.markers8[
+  macro.de.markers8$p_val_adj < 0.05 & abs(macro.de.markers8$avg_log2FC) > 1, 
+]
+macro.de.markers8 <- macro.de.markers8[order(macro.de.markers8$pct.2), ]
+# view results
+head(macro.de.markers8)
+
+# Find DE features between all pairs of clusters
+macro.de.markers9 <- FindMarkers(macrophage_cells1, ident.1 = 9, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers9<-macro.de.markers9[
+  macro.de.markers9$p_val_adj <0.05  & abs(macro.de.markers9$avg_log2FC) > 1, 
+]
+macro.de.markers9 <- macro.de.markers9[order(macro.de.markers9$pct.2), ]
+# view results
+head(macro.de.markers9)
+
+# Find DE features between all pairs of clusters
+macro.de.markers10 <- FindMarkers(macrophage_cells1, ident.1 = 10, ident.2 = NULL, only.pos = TRUE)
+# Sort the markers by avg_log2FC in descending order
+macro.de.markers10<-macro.de.markers10[
+  macro.de.markers10$p_val_adj < 0.05 & abs(macro.de.markers10$avg_log2FC) > 1, 
+]
+macro.de.markers10 <- macro.de.markers10[order(macro.de.markers10$pct.2), ]
+# view results
+head(macro.de.markers10)
+
+#plots
+#cluster0
+VlnPlot(macrophage_cells1, features = c("OLFML2A","SLC16A6","SLC2A5","SUSD1"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster0")
+FeaturePlot(macrophage_cells1,features = c("OLFML2A","SLC16A6","SLC2A5","SUSD1"),pt.size = 1)+ plot_annotation("cluster0")
+#cluster1
+VlnPlot(macrophage_cells1, features = c("FAM124A","TNNT1","CYP27B1","MIR3945HG","LSS"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster1")
+FeaturePlot(macrophage_cells1,features = c("FAM124A","TNNT1","CYP27B1","MIR3945HG","LSS"),pt.size = 1)+ plot_annotation("cluster1")
+#cluster2
+VlnPlot(macrophage_cells1, features = c("SIGLEC8","RPS6KC1","EPHB2","ME1","P2RY6"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster2")
+FeaturePlot(macrophage_cells1,features = c("SIGLEC8","RPS6KC1","EPHB2","ME1","P2RY6"),pt.size = 1)+ plot_annotation("cluster2")
+#cluster3
+VlnPlot(macrophage_cells1, features = c("VEGFC","PODXL","C5","PGM2L1","ICE1"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster3")
+FeaturePlot(macrophage_cells1,features = c("VEGFC","PODXL","C5","PGM2L1","ICE1"),pt.size = 1)+ plot_annotation("cluster3")
+#cluster4
+
+VlnPlot(macrophage_cells1, features = c("LINC01281","TRBV28","AFAP1","CXCR6","LAX1"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster4")
+FeaturePlot(macrophage_cells1,features = c("LINC01281","TRBV28","AFAP1","CXCR6","LAX1"),pt.size = 1)+ plot_annotation("cluster4")
+#cluster5
+VlnPlot(macrophage_cells1, features = c("LKAAEAR1","ADGRE3","OIP5","NEIL3","DEPDC1B"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster5")
+FeaturePlot(macrophage_cells1,features = c("LKAAEAR1","ADGRE3","OIP5","NEIL3","DEPDC1B"),pt.size = 1)+ plot_annotation("cluster5")
+
+#cluster6
+VlnPlot(macrophage_cells1, features = c("ZNF366","BARX2","KALRN","PITX1","CDH17"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster6")
+FeaturePlot(macrophage_cells1,features = c("ZNF366","BARX2","KALRN","PITX1","CDH17"),pt.size = 1)+ plot_annotation("cluster6")
+
+#cluster7
+VlnPlot(macrophage_cells1, features = c("GAL","TNNT3","AK5","TCAP","MYH1"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster7")
+FeaturePlot(macrophage_cells1,features = c("GAL","TNNT3","AK5","TCAP","MYH1"),pt.size = 1)+ plot_annotation("cluster7")
+
+#cluster8
+VlnPlot(macrophage_cells1, features = c("LINC01460","LY6G6C","PPFIA2","ADGRG3","WNT3"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster8")
+FeaturePlot(macrophage_cells1,features = c("LINC01460","LY6G6C","PPFIA2","ADGRG3","WNT3"),pt.size = 1)+ plot_annotation("cluster8")
+
+#cluster9
+VlnPlot(macrophage_cells1, features = c("BEND5","RASSF6","PKHD1L1","TRPV3","PVRIG"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster9")
+FeaturePlot(macrophage_cells1,features = c("BEND5","RASSF6","PKHD1L1","TRPV3","PVRIG"),pt.size = 1)+ plot_annotation("cluster9")
+
+#cluster10
+VlnPlot(macrophage_cells1, features = c("KRT1","RN7SL832P","SPDYE5","WNT10B","GLS2"),
+        pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("cluster10")
+FeaturePlot(macrophage_cells1,features = c("KRT1","RN7SL832P","SPDYE5","WNT10B","GLS2"),pt.size = 1)+ plot_annotation("cluster10")
+
+
+
+
+
+#------------------------------------------------DESEQ2
+## Create DESeq object
+dds <- DESeqDataSetFromMatrix(countData = macrophage_cells1, colData = meta, design = ~ seurat_clusters)
+  
+  
+  
+#--------------------------------------------LITERATURE BASED CLUSTERING
+
+
+# List of genes provided
+subcluster_markers<-list(
+mt1h = c("MT1H", "MT1G", "MT1M", "MT1X", "MT1E", "MT1F", "MT2A", "MT1HL1", "MT1A", 
+              "AL121899.1", "NDFIP2", "LINC01626", "TMEM38B", "CC2D1B", "MT1B", "TNFRSF18", 
+              "CPD", "CXCL5", "MMP12", "IFI27", "MT1L", "IFI6", "CXCL1", "ADAMDEC1", "PLA2G7", 
+              "CTSL", "ISG15", "OLFML3", "APOC1", "MX1", "GLUL", "SDS", "IL7R", "ABCA1", "CTSD", 
+              "IFI44L", "CCL18", "FCGR3A", "IFIT3", "SPP1", "LAG3", "IFIT1", "MMP14"),
+spp1 = c("AC073611.1", "AC093895.1", "AC147651.4", "ACTN1", "ACVR1B", "ADAM10", "ADAM17", "ADARB1", 
+           "ADM", "AHNAK", "AK4", "AL136454.1", "ANG", "ANGPTL4", "ANGPTL6", "ANPEP", "ANXA2", "APOC1", 
+           "APOE", "ARID5B", "ARRDC3", "ASPHD1", "AVL9", "B2M", "BCAT1", "BNIP3", "C15orf48", "CA12", 
+           "CAVIN1", "CAVIN3", "CCL7", "CCR1", "CD109", "CD63", "CD68", "CD81", "CD82", "CD9", "CEBPB", 
+           "CHI3L1", "CIR1", "CLEC5A", "COL27A1", "CRABP2", "CSF1", "CSTB", "CTSA", "CTSD", "CTSL", "CTSZ", 
+           "CTTN", "CXCL16", "CYP19A1", "DTX2", "DUSP4", "EAF1", "EGLN3", "ELMO2", "EMILIN1", "EMP1", 
+           "ENO2", "EZH1", "FABP5", "FAM129B", "FAM213B", "FAM214B", "FBP1", "FCER1G", "FLT1", "FN1", 
+           "FTL", "GGA1", "GM2A", "GNLY", "GPC4", "GSDME", "GYS1", "GZMB", "HEXB", "HK2", "HOXB13", 
+           "HTRA1", "IDE", "IGF2R", "IGFBP6", "IL2RG", "INHBA", "IRAK1", "ITGA5", "ITGB2", "KDM3A", "LAT", 
+           "LILRB4", "LINC02345", "LMBRD1", "LONP1", "LPL", "LRPAP1", "LYZ", "MAFK", "MAPK13", "MATK", 
+           "MECP2", "METRNL", "METTL7B", "MIF-AS1", "MINDY2", "MIR210HG", "MITF", "MMP12", "MMP19", "MMP7", 
+           "MMP8", "MMP9", "MSANTD3", "MSC", "MSR1", "MT3", "MUCL1", "MXI1", "MYO1E", "NDRG1", "NMB", 
+           "NPC1", "NRIP3", "P2RX4", "PAQR5", "PARP6", "PC", "PCGF1", "PDE4A", "PDK1", "PHC2", "PHF1", 
+           "PHLDA1", "PI4K2A", "PKM", "PLAUR", "PLIN2", "PPT1", "PRKAG2", "RAI14", "RAPH1", "RCAN1", 
+           "RNF187", "RUNX1", "RYBP", "S100A11", "SCARB2", "SCG5", "SCIN", "SDC2", "SDC4", "SELENON", 
+           "SEMA3C", "SFXN3", "SHB", "SLAMF9", "SLC11A1", "SLC16A10", "SLC16A3", "SLC17A5", "SLC2A1", 
+           "SLC35E1", "SLC35F5", "SLC6A8", "SLCO4A1", "SMIM13", "SMOX", "SPAG4", "SPARC", "SPOCD1", "SPP1", 
+           "SQOR", "ST20", "ST3GAL1", "STX1A", "TFRC", "TM4SF19", "TMEM41B", "TMEM45A", "TNFRSF12A", 
+           "TNIK", "TNS1", "TREM1", "TRIP10", "UAP1L1", "UBTD1", "UBXN7", "VAT1", "VMO1", "VPS37C", 
+           "WHRN", "ZBTB43", "ZFYVE16", "ZFYVE28", "ZMIZ1-AS1", "ZNF395", "ZNF397"),
+CCL18 = c("CCL18", "AC243829.4", "RBP1", "SCN1B", "COL6A2", "NNMT", "TDP2", "SUSD1", 
+          "B4GALT1", "FXYD6", "HS3ST2", "PLXNA3", "TTL", "GPX3", "PAX8", "RPS6KA2", 
+          "F12", "NUPR1", "CCL13", "SLC18B1", "ABHD4", "PDGFC", "SCD", "GRK6", 
+          "AC008033.3", "LILRB5"),
+APOE = c("APOE", "APOC1", "CHCHD6", "IQGAP2", "HTRA4", "A2M", "TMEM150A", "DNAJC5B", 
+          "CPM", "CHCHD10", "PLA2G7", "ACP5", "ASAH1", "SPARC", "KCNJ5", "PRCP", "FAM213A", 
+          "LIPA", "LINC01857", "IDH1", "TMEM86A", "PLD3", "CREBRF", "PADI2", "DNASE2", 
+          "RAP2B", "SCARB1", "GAA", "LRPAP1", "PDGFC", "NCEH1", "FUCA1", "FABP3", "NUDT14", 
+          "DNAJC16", "PLXNA1", "CREBL2", "CTSS", "HLA-G", "SUCNR1", "EPHX1", "GLMP", "SIK1B", 
+          "ALDH1A1", "CLMN", "PLEKHM2", "MAN1C1", "LGMN", "RASSF4", "CD84", "BDH2", "ALOX15B", 
+          "MS4A4A", "TFE3", "ZMPSTE24", "PIK3IP1", "HIBADH", "TMEM37", "JADE2", "TMEM127", 
+          "OTOA", "NDUFAF1", "GM2A", "HTATIP2", "SIRPB2", "UNC13B", "SIGLEC8", "RAB9A", "TMEM163", 
+          "P2RX7", "CYB5R1", "TPP1", "DHRSX", "LGALS3", "PLCL1", "COX15", "CUL9", "PSAP", "DDHD1", 
+          "ZYG11B", "CMKLR1", "STRADB", "KLHDC8B", "ADAMDEC1", "C2orf74", "SERPING1", "SLC45A4", 
+          "PDCL", "LINC02384", "L3MBTL4-AS1", "SLC27A1", "CD247", "FLVCR2", "BAIAP2", "GPANK1", 
+          "OAZ2", "UBE2D1", "RYK", "SNX24", "VPS35L", "HSD17B14", "RTN2", "CD68", "RGS12", "ARL8A", 
+          "IGSF6", "PNKD", "FUOM", "TCEAL1", "BABAM2", "C2", "PISD", "C19orf12", "CREG1", "AL078590.3", 
+          "FMNL2", "ABCC1", "ZG16B", "SND1", "ZNF589", "MANBA", "HYAL2", "CDS2", "TCEAL8", "ZNF496", 
+          "PATZ1", "TMEM42", "ZNF720", "PARP3", "LPAR2", "TMEM144", "NAGLU", "ZKSCAN8", "SLC1A3", 
+          "UROD", "AC100810.1", "HNMT", "ARRB2", "VCPIP1", "GBA", "CCNT1", "TMEM35B", "CLIC2", "CCL5", 
+          "ABCA1", "ELP3", "ADCK2", "SLC35E2A", "C1QB", "TCEAL4", "GRN", "ODF2L", "CD99L2", "SLC22A15", 
+          "CD59", "ATP6V1D", "RMDN3", "DIRC2", "STOM", "HSD17B4", "ZNF804A", "RNF170", "GUSB", "UBE2E2", 
+          "HAGHL", "PPT2", "MLKL", "SLC29A1", "EPB41L4A-AS1", "TREM2", "CBR1", "FOXO1", "ADA2", "SPIRE1", 
+          "GPNMB", "BRAF", "RTN4", "SIGLEC10", "TMEM176B", "FBXO33", "IFNAR2", "KIAA2013", "RTN4R", 
+          "ARMCX1", "AC084871.2", "ALDH4A1", "IL32", "SNTB1", "SIAE", "PSEN1", "TYROBP", "RAP2A", "TTC7A", 
+          "SMIM30", "SIL1", "ABCC5", "ZNF382", "ATP6V0C", "ARSA", "STEAP3", "FTO", "ASIP", "CCPG1", "RAB35", 
+          "POFUT1", "TTC8", "UBR2", "BOD1L1", "CD9", "IQCG", "ATP6V1F", "KCNE1", "CYP27B1", "SLC38A6", 
+          "KIF13B", "NECAP1", "FCHO2", "NRIP1", "ITPKB", "NUCB1", "FAM78A", "RASSF3", "TBC1D1", "KCNMA1", 
+          "ABCC3", "TMEM255A", "DVL2", "PQLC2", "NOP9", "WDR81", "GLUL", "RASA3", "ST5", "ERLIN1", "STAP2", 
+          "RAB20", "PCYOX1", "PECAM1", "CTBS", "CTSB", "ZNF345", "STARD10", "HLA-DMB", "SIT1", "AC090825.1", 
+          "CHI3L1", "ANKRD29", "SRP14-AS1", "CD72", "PIR", "TBXAS1", "CYP4V2", "ZNF691", "PDHX", "SUSD6", 
+          "HLA-DQA2", "SLC25A30", "TTC21A", "AC008915.2", "IDS", "ZNF205", "MCOLN3", "NPC2", "MRAS", "PHACTR2", 
+          "ANTXR2", "ZNF765", "BEAN1", "TMEM70", "CLCN7", "HEXA", "AC244090.1", "ZNF436", "EFNA4", "TM7SF2", 
+          "MS4A6E", "PAXIP1-AS1", "AC006333.2", "HHLA3", "DNAJC25", "IGHV3-23", "COG2", "TRAPPC4", "SLC25A16", 
+          "RAB13", "C1QA", "TMEM185B", "EMC1", "TRAPPC13", "SRGAP3", "ATG7", "GSTM4", "ARSB", "CAPG", "ABR", 
+          "DPH1", "SAA1", "ATOX1", "AC004540.1", "CD81", "HSBP1L1", "SDCBP", "HS6ST1", "RILP", "RIPOR1", 
+          "SLC7A8", "RNASEL", "LAMP1", "CD63", "ZNF250", "CYB5A", "PLXND1", "TKFC", "UGCG", "UHRF2", "TBC1D2", 
+          "MS4A7", "STAC3", "LMBR1L", "FEM1B", "SNRNP35", "SCAMP1", "RTKN", "KCNE3", "ZNF227", "SNX6", 
+          "PAQR8", "CTSC", "PPARGC1B", "CD46", "NPL", "FAM8A1", "AQR", "TMEM33", "EOGT", "YBEY", "KIFAP3", 
+          "MMP2-AS1", "SLAMF8", "IFI30", "EEPD1", "PCGF3", "PPARA", "OAZ3", "SLC38A7", "PRDX1", "TAF5L", 
+          "CPSF7", "R3HDM2", "LARP1", "TPSAB1", "SERINC1", "ZBED3-AS1", "CNEP1R1", "IFT88", "ANOS1", "VAT1", 
+          "CEBPA", "WWC3", "LPP", "USP40", "TMEM201", "CHIT1", "BIRC7", "CYP27A1", "BSDC1", "MACO1", 
+          "LGALS3BP", "PEX7", "GHDC", "SLC35F6", "CYBB", "WIPF3", "SLC7A7", "DCAF1", "DOK3", "GRAMD4", 
+          "C11orf71", "SOX12", "FHIT", "CTSD", "ATN1", "MCOLN1", "USF2", "C11orf45", "CFD", "IRF2BP1", 
+          "KLHDC2", "GOPC", "ACVRL1", "DHRS9", "ARRDC3", "ENTR1", "GAPVD1", "RASA1", "TPSD1", "DTNB", 
+          "ZNF184", "ZNF275", "BLVRB", "ACAA2", "TRAT1", "LY9", "UBE2R2", "TATDN3", "ZDHHC18", "PINK1"),
+CXCL10 = c("CXCL10", "CXCL11", "CCL8", "IFIT2", "IFIT1", "ISG20", "RSAD2", "DEFB1", 
+          "ETV7", "IFIT3", "GBP1", "HAPLN3", "ANKRD22", "RARRES3", "CXCL9", "IDO1", 
+          "GBP5", "IL27", "TNFSF10", "ISG15", "SOCS1", "SAMD9", "GBP4", "WARS", "IFIH1", 
+          "IFITM3", "CCL2", "HELZ2", "OASL", "HIVEP2", "PLEK", "CCL19", "IFI35", "IRF1", 
+          "CD274", "SAMD9L", "PSTPIP2", "CSF2RB", "PNPT1", "ATF5", "GCH1", "IRF7", "IFI44L", 
+          "CALHM6", "IL15", "SLC25A28", "TGM1", "STAP1", "HESX1", "UBD", "BACH1", "CFLAR", 
+          "BCL2L14", "TAP1", "OAS2", "STOML1", "HSH2D", "P2RY13", "DUSP22", "XRN1", "FHAD1", 
+          "MIB1", "USP30-AS1", "RAPGEF2", "EXOC3L1", "C19orf66", "FBXO6", "MMP25-AS1", 
+          "AL591468.1", "CD40", "C9orf66", "LILRB1", "MAPK8", "GTPBP1", "VAMP5", "TDRD7", 
+          "CUL1", "RPS6KC1", "PML", "TRADD", "SAMD4A", "IFITM1", "SEMA4A", "GBP2", "IL31RA", 
+          "TMEM255B", "STAT2", "ERI1", "DDX58", "PUS7", "STK3", "RASGEF1B", "CASP5", "AL357054.4"),
+
+F13A1= c("F13A1", "STAB1", "FOLR2", "IGF1", "FCGR2B", "KIFC2", "RASL10A", "LTC4S", 
+    "HS3ST1", "ARMCX2", "AP001816.1", "ZNF43", "CD209", "IFITM10", "HSPBAP1", 
+    "FOXN3", "SRGAP1", "MYO15B", "FAM193A", "BEX4", "CCDC170", "ITGA9", "PLAU", 
+    "SCAMP1-AS1", "USP53", "WDTC1", "FCGR2A", "AC110995.1", "SATB1", "PGGHG", "HMG20A", 
+    "APPL2", "AL118508.1", "HLX", "CRTC1", "TMEM51-AS1", "UNC13D", "NCOA1", "USP36", 
+    "FER", "ZFP90", "GALK2", "TAPT1", "CREM", "INHBA-AS1", "MAF", "ADNP2", "GPR34", 
+    "TADA2B", "EPB41L3", "ZBTB46", "ARRDC3-AS1", "TVP23A", "CALML3", "ZNF518A", "PAQR6", 
+    "TMEM255B", "CRYBB1", "SIAH1", "MKNK1", "MAPK8", "FPR3", "OGA", "ZNF780B", "LINC01089", 
+    "TREML1", "SLC46A1", "PCDH12", "CNRIP1", "EBI3", "AP003481.1", "ZSCAN16", "FBRSL1", 
+    "SLC11A2", "LPAR6", "CRTC3", "IGSF21", "CSF2RA", "ACAD10", "GDPD1", "PLXDC1", "B3GALT6", 
+    "C12orf76", "ZNF469", "QPRT", "MS4A14", "USP51", "CDR2L", "CXorf56", "CSF1R", "UBR3", 
+    "IRF2BPL"),
+FOLR2= c("C1QA", "C1QC", "C1QB", "CD68", "ITM2B", "CTSD", "NPC2", "SLC40A1", "RNASE1", 
+    "FTL", "FOLR2", "PLTP", "TMEM176B", "CTSC", "LGMN", "MS4A4A", "GIMAP7", "DAB2", 
+    "CD14", "TXNIP", "PLD3", "PRDX1", "TMEM176A", "MS4A6A", "PPIB", "FCGRT", "SLCO2B1", 
+    "CD63", "ATP6V0C", "APOE", "APOC1", "CTSA", "BST2", "TREM2", "GPR34", "CREG1", "VAMP8", 
+    "STMN1", "B2M", "CAPG", "GPNMB", "C2", "TSPAN4", "C3AR1", "TECR", "GAL3ST4", "KRTCAP2", 
+    "CTSB", "TUBA1B", "TMED9", "CD99", "LAPTM5", "LAMP1", "FCGR3A", "A2M", "DAD1", "MSR1", 
+    "LAIR1", "GRN", "PSAP", "GIMAP4", "CCL18", "AKR1B1", "TCN2", "SNX6", "TMBIM6", "TMEM59", 
+    "TNFSF13", "CD81", "MGST3", "PMP22", "TYROBP", "LIPA", "ATP6V0E1", "LILRB5", "NPL", "RHOA", 
+    "AKR1A1", "TGFBI", "RNASEK", "OLFML3", "UQCR10", "P4HB", "DNASE2", "HSPB1", "TNFSF12", 
+    "LY96", "GIMAP1", "JPT1", "DNPH1", "MBD4", "ATP6V0B", "AP2S1", "HSP90B1", "HMGN2", "CAPZB", 
+    "HLA-A", "ARL6IP1", "EPHX1", "DYNLL1", "SERPING1", "ATOX1", "CD151", "SSR4", "LMAN1", "TUBB", 
+    "GLMP", "SLC25A39", "FUCA1", "LGALS3BP", "BLVRA", "ASAH1", "HMGB1", "BCAP31", "SEC11C", 
+    "C1orf54", "SCAMP2", "TMEM35B", "TMEM179B", "NUCB1", "FCGR1A", "COMT", "SPCS2", "KDELR1", 
+    "FABP5", "VAT1", "NUCB2", "HLA-B", "ADAP2", "FCER1G", "COX6A1", "COX6C", "CALR", "ATP5MF", 
+    "RABAC1", "TALDO1", "APH1A", "GIMAP5", "LGALS3", "MCOLN1", "SOD1", "ATP5MC3", "ISCU", "IFI6", 
+    "SMIM29", "EMB", "PEBP1", "TMEM147", "SELENOW", "NDUFB11", "NDUFC2", "CLTA", "UBB", "ATP5PO", 
+    "SHISA5", "F13A1", "PLA2G7", "SUMO3", "SNX2", "ATP5MD", "NDUFA13", "GM2A", "PDIA4", "NCF4", 
+    "GLUL", "CSF1R", "TUBA1C", "RAB5C", "ATP6V1F", "PSMB1", "ATP6AP1", "EMC7", "TIMP2", "FCGR2A", 
+    "SIGLEC12", "PTPMT1", "ANAPC11", "CANX", "RAB13", "ABHD12", "HEXB", "NDUFS7", "UQCR11", 
+    "ATP6AP2", "CMKLR1", "CTSZ", "CLN6", "TMEM208", "LPAR6", "UQCRQ", "MERTK", "PRDX3", "SCPEP1", 
+    "HLA-E", "NTAN1", "HLA-DMA", "PTMS", "ATP5IF1", "MFSD1", "ATP5F1D", "MAF", "SNAPIN", "ADAMDEC1", 
+    "STAB1", "CD163", "CTSL", "TMEM50A", "LY6E", "LEPROTL1", "SLC22A18", "SNRPC", "TEX264", "LAPTM4A", 
+    "YWHAH", "SDC3", "NAIP", "NDUFA4", "PSMA7", "EMC3", "OLFML2B", "FUCA2", "MGAT4A", "IFI27L2", 
+    "MRPL51", "CIAO2A", "VKORC1", "ARL2", "VSIG4", "HNMT"),
+IL1B= c("AREG", "C5AR1", "CCL20", "CCL3", "CCL3L1", "CCL4", "CCL5", "CCRL2", "CD44", 
+    "CD83", "CH25H", "CXCL1", "CXCL2", "CXCL3", "CXCL5", "CXCL8", "CXCR4", "DUSP1", 
+    "EGR1", "EREG", "GPR183", "HBEGF", "HES1", "HIF1A", "HSP90AA1", "HSPA1A", "HSPA1B", 
+    "HSPB1", "HSPD1", "HSPH1", "ICAM1", "IL1A", "IL1B", "IL1RN", "IL6", "IL7R", "KLF2", 
+    "KLF4", "MMP12", "NAMPT", "NFKBIA", "NFKBIZ", "NLRP3", "NR4A1", "NR4A3", "OLR1", 
+    "PDE4B", "PTGER4", "PTGS2", "RGCC", "RIPK2", "S100A8", "SPP1", "TFRC", "THBS1", 
+    "TIMP1", "TNF", "UBC", "VEGFA"),
+LYVE1= c("AP2A2", "BRI3", "CD14", "CD163", "CD163L1", "CD209", "CD36", "CD4", "CD59", 
+    "CEBPB", "CFD", "CHID1", "COLEC12", "CR1", "CREG1", "CSF1R", "CST3", "CTSC", 
+    "CTSZ", "CYBB", "DAB2", "DCN", "DPP7", "FCGR2B", "FGL2", "FOLR2", "FUCA1", 
+    "GAA", "HLA-E", "IGF1", "IL2RA", "IL6ST", "IQGAP1", "IQGAP2", "ITGAM", "LAMP1", 
+    "LGMN", "LRP1", "MARCO", "MEF2C", "METTL7A", "MRC1", "PLD3", "PLEKHO2", "PRNP", 
+    "RAB5C", "RAC1", "RNASET2", "ROCK1", "SDC3", "STAB1", "STOM", "TCN2", "TGFBR2", 
+    "TIMP2", "TLR4", "TNFRSF1B", "TNFRSF21", "TPP1", "VAT1", "VSIG4"),
+HLA_DPB1= c("HLA-DPB1", "HLA-DPA1", "HLA-DRB1", "HLA-DQA1", "HLA-DQB1", 
+    "IFNGR1", "HLA-DQA2", "HLA-DRB5", "HLA-DRA", "FCGR2B"),
+MKI67= c("TOP2A", "CENPF", "CDK1", "SMC4", "PCNA", "CENPE", "CCNB1", 
+    "TTK", "ESCO2", "BIRC5", "KNL1", "CENPU", "BUB1B", "NCAPG", 
+    "CENPM", "RAD51AP1", "MCM7", "CENPW", "NDC80", "HELLS", "CENPK", 
+    "SPDL1", "RAD21", "CBX3", "MCM4", "ZWINT", "NUF2", "SGO2", 
+    "BUB3", "SKA2", "MAD2L1", "KIF2C", "BRCA2", "EZH2", "CENPN", 
+    "BUB1", "SPC25", "CENPX", "CBX5", "AURKB", "CDCA8", "PARP1", 
+    "NCAPD2", "SGO1", "MIS18BP1", "MCM3", "NCAPD3", "MCM5", "FEN1", 
+    "KIF22", "CKAP5", "SMC3", "PRKDC", "XRCC5", "SPAG5", "PLK1", 
+    "MCM2", "MCM6", "SMC1A", "SKA3", "HJURP", "HNRNPA2B1", "KIF18A", 
+    "CENPH", "BLM", "NHP2", "ITGB3BP", "CDCA5", "KNTC1", "KNSTRN", 
+    "RPA2", "SKA1", "HAT1", "PPP1CA", "CHEK1", "XPO1", "ZWILCH", 
+    "MSH2", "XRCC6", "TPR", "CENPQ", "CENPA", "MKI67", "NUSAP1", 
+    "UBE2C", "SMC2", "PTTG1", "DLGAP5", "SLC25A5", "RAN", "CDC20", 
+    "CCNB2", "AURKA", "KIF23", "NCAPG2", "NCAPH", "KIF14", "ANAPC11", 
+    "KIFC1", "VRK1", "RACGAP1", "CCNE2", "BANF1", "FBXO5", "TACC3", 
+    "PRC1", "KIF4A", "ECT2", "FANCD2", "PKMYT1", "KPNB1", "MYBL2", 
+    "CDC6", "BRIP1", "MZT1", "UBE2S", "RPS3", "ACTR3", "TUBG1", "RMI1", 
+    "ASPM", "TPX2", "CKAP2", "CKAP2L", "RANBP1", "NPM1", "SHCBP1", 
+    "MZT2A", "MZT2B", "HAUS1", "KIF20A", "TOPBP1", "CAPG", "CALM2", 
+    "CNTRL", "PLK4"),
+
+GBP1= c("GBP1", "CCL8", "GBP5", "GBP4", "STAT1", "IFITM3", "IRF1", 
+    "GBP2", "OASL", "IFITM2", "PARP14", "MT2A", "CCL2", "OAS1", 
+    "CASP1", "NMI", "FCGR1A", "NUB1", "TRIM22", "OAS3", "HCK", 
+    "OAS2", "IFI30", "IRF7", "GCH1", "CCL3L1", "HLA-DQA2", "AIF1", 
+    "PARP9", "CCL4", "CD40", "KYNU", "B2M", "HLA-F", "PTPN2", "FCGR1B", 
+    "JAK2", "ICAM1", "SP100", "GBP3", "IRF2", "BST2", "PML", "CXCL10", 
+    "APOBEC3A", "CXCL9", "IFIT2", "IFIT3", "ISG15", "RSAD2", "IFIT1", 
+    "ISG20", "MX1", "MX2", "NT5C3A", "IFIH1", "DDX58", "HERC5", "IFI44L", 
+    "LILRB1", "PLSCR1", "IFI6", "EIF2AK2", "PTPRC", "FGR", "STAT2", 
+    "USP15", "MYD88", "BIRC3", "APOBEC3G", "DTX3L", "IFI44", "IFI27", 
+    "XAF1", "IFI35", "PSMB8"),
+
+MT1G= c("CXCL1", "CTSD", "CTSB", "FCGR2A", "PLAUR", "FABP5", "PLAU", 
+    "CTSA", "LGALS3", "IGF2R", "CD300A", "CTSC", "FCER1G", "HEXB", 
+    "S100A8", "CD68", "S100A9", "GM2A", "S100A11", "HPSE", "ASAH1", 
+    "IDH1", "CSTB", "CD14", "SLC11A1", "ADAM8", "CCL5", "RAB10", 
+    "LAMP2", "PKM", "TIMP2", "ATP6AP2", "CREG1", "CD36", "SIRPA", 
+    "B2M", "MMP9", "ANXA2", "DYNLT1", "CTSL", "SCARB2", "SDC2", "ACP2", 
+    "LIPA", "PLBD2", "PPT1", "PLD3", "TCN2", "HEXA"),
+IFN= c("CASP1", "CASP4", "CCL2", "CCL3", "CCL4", "CCL7", "CCL8", 
+    "CD274hi", "CD40", "CXCL2", "CXCL3", "CXCL9", "CXCL10", 
+    "CXCL11", "IDO1", "IFI6", "IFIT1", "IFIT2", "IFIT3", "IFITM1", 
+    "IFITM3", "IRF1", "IRF7", "ISG15", "LAMP3", "PDCD1LG2hi", 
+    "TNFSF10", "C1QA", "C1QC", "CD38", "IL4I1", "IFI44L"),
+ClassicalTIMs = c("S100A4", "S100A6", "S100A8", "S100A9", "S100A12", "S100A13",
+    "AREG", "CCL4", "CCR2", "CD14", "CD300E", "CD36", "CEBPD", 
+    "CLEC11A", "CLEC12A", "CSF1R", "CTSS", "CX3CR1", "CXCL2", 
+    "CXCR4", "EGR1", "FCN1", "FOS", "FTH1", "IL1B", "ITGAM", 
+    "JUNB", "LGALS2", "LY6C1", "LY6C2", "LYZ", "MAF", "MAFB", 
+    "MPEG1", "NFKB1", "NFKBIA", "NLRP3", "NR4A1", "NR4A2", "OSM", 
+    "PTGS2", "RGS2", "SELL", "THBS1", "VCAN"),
+Nonclassicalmonocytes= c("CX3CR1", "CCL5", "CD52", "CDH23", "CDKN1C", "FCGR3A", "FCGR3B", 
+                          "FCGR4", "GNLY", "GZMB", "ICAM2", "IFITM1", "IL32", "KLRC4", "KLRK1", 
+                          "LILRA", "LILRB1", "MS4A7", "MTSS1", "PRF1", "SLC44A2"),
+Intermediatemonocytes= c("CCL2", "CCL8", "CX3CR1", "CXCL10", "FCGR3A", "IFITM2", "IL1RN", 
+                          "IRF7", "ISG15", "ISG20", "LILRB1", "LILRB1A1", "MS4A7", "MTSS1", 
+                          "RHOC", "SERPINA1", "SIGLEC10", "STAT1", "TCF7L2", "TNFSF10", "TNFSF13B")
+
+)
+
+
+# Find genes that appear more than once (non-unique across groups)
+duplicated_genes <- subcluster_markers[duplicated(subcluster_markers) | duplicated(subcluster_markers, fromLast = TRUE)]
+
+# Remove genes that appear in multiple groups
+mt1h_unique <- setdiff(subcluster_markers$mt1h, duplicated_genes)
+spp1_unique <- setdiff(subcluster_markers$spp1, duplicated_genes)
+CCL18_unique <- setdiff(subcluster_markers$CCL18, duplicated_genes)
+APOE_unique <- setdiff(subcluster_markers$APOE, duplicated_genes)
+CXCL10_unique <- setdiff(subcluster_markers$CXCL10, duplicated_genes)
+F13A1_unique <- setdiff(subcluster_markers$F13A1, duplicated_genes)
+FOLR2_unique <- setdiff(subcluster_markers$FOLR2, duplicated_genes)
+IL1B_unique <- setdiff(subcluster_markers$IL1B, duplicated_genes)
+LYVE1_unique <- setdiff(subcluster_markers$LYVE1, duplicated_genes)
+HLA_DPB1_unique <- setdiff(subcluster_markers$HLA_DPB1, duplicated_genes)
+MKI67_unique <- setdiff(subcluster_markers$MKI67, duplicated_genes)
+GBP1_unique <- setdiff(subcluster_markers$GBP1, duplicated_genes)
+MT1G_unique <- setdiff(subcluster_markers$MT1G, duplicated_genes)
+IFN_unique <- setdiff(subcluster_markers$IFN, duplicated_genes)
+ClassicalTIMs_unique <- setdiff(subcluster_markers$ClassicalTIMs, duplicated_genes)
+Nonclassicalmonocytes_unique <- setdiff(subcluster_markers$Nonclassicalmonocytes, duplicated_genes)
+Intermediatemonocytes_unique <- setdiff(subcluster_markers$Intermediatemonocytes, duplicated_genes)
+
+# Now print the unique lists
+print(mt1h_unique)
+print(spp1_unique)
+print(CCL18_unique)
+print(APOE_unique)
+print(CXCL10_unique)
+print(F13A1_unique)
+print(FOLR2_unique)
+print(IL1B_unique)
+print(LYVE1_unique)
+print(HLA_DPB1_unique)
+print(MKI67_unique)
+print(GBP1_unique)
+print(MT1G_unique)
+print(IFN_unique)
+print(ClassicalTIMs_unique)
+print(Nonclassicalmonocytes_unique)
+print(Intermediatemonocytes_unique)
+
+
+
+# Define a list of gene lists
+gene_lists <- list(
+  mt1h = mt1h_unique,
+  spp1 = spp1_unique,
+  CCL18 = CCL18_unique,
+  APOE = APOE_unique,
+  CXCL10 = CXCL10_unique,
+  F13A1 = F13A1_unique,
+  FOLR2 = FOLR2_unique,
+  IL1B = IL1B_unique,
+  LYVE1 = LYVE1_unique,
+  HLA_DPB1 = HLA_DPB1_unique,
+  MKI67 = MKI67_unique,
+  GBP1 = GBP1_unique,
+  MT1G = MT1G_unique,
+  IFN = IFN_unique,
+  ClassicalTIMs = ClassicalTIMs_unique,
+  Nonclassicalmonocytes = Nonclassicalmonocytes_unique,
+  Intermediatemonocytes = Intermediatemonocytes_unique
+)
+
+
+top_markers <-top_genes_per_cluster[
+top_genes_per_cluster$pct.2 < 0.01, 
+]
+#plastice cell, overlaps are fine>>major cell tyope cannot have any overlap, can reduce
+top_markers<-top_markers$gene
+# Find common markers
+common_markers <- list()
+
+for (cluster in names(subcluster_markers)) {
+  common_genes <- intersect(subcluster_markers[[cluster]], top_markers)
+  if (length(common_genes) > 1) {
+    common_markers[[cluster]] <- common_genes
+  }
+}
+print(common_markers)
+
+#mt1h cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+#VlnPlot(macrophage_cells1, features = c("MMP12","CCL18","CXCL5"),
+        #pt.size = 0.2,group.by = c("seurat_clusters")) + plot_annotation("MTLH SUB CLUSTER")
+#FeaturePlot(macrophage_cells1,features = c("MMP12","CCL18"),pt.size = 1)+ plot_annotation("MTLH SUB CLUSTER")
+
+#spp1 cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(macrophage_cells1, features = c("CA12","MUCL1","TMEM45A"),
+        pt.size = 0.2,group.by = c("seurat_clusters"))+ plot_annotation("SPP1 SUB CLUSTER")
+FeaturePlot(macrophage_cells1,features = c("CA12","MUCL1","TMEM45A"),pt.size = 1)+ plot_annotation("SPP1 SUB CLUSTER")
+
+#CCL18 cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+#VlnPlot(macrophage_cells1, features = c("CCL18","HS3ST2"),
+       # pt.size = 0.2,group.by = c("seurat_clusters"))+ plot_annotation("CCL18 SUB CLUSTER")
+#FeaturePlot(macrophage_cells1,features = c("CCL18","HS3ST2"),pt.size = 1)+ plot_annotation("CCL18 SUB CLUSTER")
+
+#APOE cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+VlnPlot(macrophage_cells1, features = c("ZG16B" ,"CYP27B1","TTC21A" ),
+        pt.size = 0.2,group.by = c("seurat_clusters"))+ plot_annotation("APOE SUB CLUSTER")
+FeaturePlot(macrophage_cells1,features = c("TPSAB1" ,"CHIT1","SAA1"),pt.size = 1)+ plot_annotation("APOE SUB CLUSTER")
+
+#FOLR2 cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+#VlnPlot(macrophage_cells1, features = c("CCL18","SIGLEC12","GIMAP5","C2"),
+       # pt.size = 0.2,group.by = c("seurat_clusters"))+ plot_annotation("FOLR2 SUB CLUSTER")
+#FeaturePlot(macrophage_cells1,features = c("CCL18","SIGLEC12","GIMAP5","C2"),pt.size = 1)+ plot_annotation("FOLR2 SUB CLUSTER")
+
+#LYVE1 cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+#VlnPlot(macrophage_cells1, features = c("DCN"),
+        #pt.size = 0.2,group.by = c("seurat_clusters"))+ plot_annotation("LYVE1 SUB CLUSTER")
+#FeaturePlot(macrophage_cells1,features = c("DCN"),pt.size = 1)+ plot_annotation("LYVE1 SUB CLUSTER")
+
+#HLA_DPB1 cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+#VlnPlot(macrophage_cells1, features = c("HLA-DQA2"),
+        #pt.size = 0.2,group.by = c("seurat_clusters"))+ plot_annotation("HLA_DPB1 SUB CLUSTER")
+#FeaturePlot(macrophage_cells1,features = c("HLA-DQA2"),pt.size = 1)+ plot_annotation("HLA_DPB1 SUB CLUSTER")
+
+#GBP1 cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+#VlnPlot(macrophage_cells1, features = c("IFI30","HLA-DQA2","CXCL9"),
+        #pt.size = 0.2,group.by = c("seurat_clusters"))+ plot_annotation("GBP1 SUB CLUSTER")
+#FeaturePlot(macrophage_cells1,features = c("IFI30","HLA-DQA2","CXCL9"),pt.size = 1)+ plot_annotation("GPB1 SUB CLUSTER")
+
+#IFN cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+#VlnPlot(macrophage_cells1, features = c("CXCL9","CD38"),
+        #pt.size = 0.2,group.by = c("seurat_clusters"))+ plot_annotation("IFN SUB CLUSTER")
+#FeaturePlot(macrophage_cells1,features = c("CXCL9","CD38"),pt.size = 1)+ plot_annotation("IFN SUB CLUSTER")
+
+#Nonclassicalmonocytes cluster 
+# These are now standard steps in the Seurat workflow for visualization and clustering
+# Visualize canonical marker genes as violin plots.
+#VlnPlot(macrophage_cells1, features = c("FCGR3B","KLRK1"),
+       # pt.size = 0.2,group.by = c("seurat_clusters"))+plot_annotation(title="Nonclassical Monocytes")
+#FeaturePlot(macrophage_cells1,features = c("FCGR3B","KLRK1"),pt.size = 1)+ plot_annotation("NONCLASSICAL MONOCYTES SUB CLUSTER")
+
+
+
+
+
+
+
+
+
+#------------------------------------------
+
+#single R Annotation as a reference
+sp.immune <- celldex::MonacoImmuneData()
+pred.all <- SingleR::SingleR(
+  test = LayerData(all),
+  ref = list(sp.immune),
+  assay.type.test = 1,
+  labels = list(sp.immune$label.main)
+)
+# Define the 16 cell types you want to focus on
+cell_types_of_interest <- c(
+  "T cell", "Epithelial cell", "Endothelial cell", "B cell", 
+  "Mast cell", "Plasma cell", "Plasmacytoid dendritic cell(pDC)",
+  "Natural Killer cell", "Macrophage", "Fibroblast"
+)
+
+# Filter the SingleR predictions to include only the relevant cell types
+all@meta.data[["SingleR"]] <- pred.all[["labels"]]
+all@meta.data[["SingleR_filtered"]] <- ifelse(all@meta.data[["SingleR"]] %in% cell_types_of_interest, 
+                                              all@meta.data[["SingleR"]], 
+                                              NA)
+
+# Create a UMAP plot with the filtered labels
+pCellMarker2 <- DimPlot(all,
+                        reduction = "umap",
+                        label = TRUE, label.size = 4,
+                        pt.size = 0.8, repel = TRUE,
+                        group.by = "SingleR_filtered") +
+  scale_color_manual(values = pals::brewer.paired(length(cell_types_of_interest)))
+
+
+pSingleR <- DimPlot(all,
+                    reduction = "umap", repel = TRUE,
+                    label = TRUE,
+                    label.size = 4,
+                    pt.size = 0.8,
+                    group.by = "patientID",
+) 
+scale_color_manual(values = pals::brewer.paired(37))
+patchwork::wrap_plots(A = pCellMarker2, B = pSingleR, ncol = 2)
+
+
+
+#heat map
+all.markers %>%
+  group_by(cluster) %>%
+  dplyr::filter(avg_log2FC > 1) %>%
+  slice_head(n = 10) %>%
+  ungroup() -> top10
+#DoHeatmap(all, features = top10$gene) + NoLegend()
+
+# Filter for top marker genes (adjust 'top_n' as needed)
+top_markers <- all.markers %>%
+  group_by(cluster) %>%
+  top_n(n = 1, wt = avg_log2FC)  # Adjust 'n' to get the top gene per cluster
+
+DoHeatmap(all, features = top_markers$gene) + NoLegend()
+# View the top marker genes
+print(top_markers)
+
+# Generate a violin plot for the most differentially expressed gene in each cluster
+# Grouped by clusters or cell types annotated earlier
+VlnPlot(all, features = top_markers$gene, group.by = "seurat_clusters", pt.size = 0.5, assay = "SCT") +
+  theme_minimal() +
+  ggtitle("Violin Plot of Top Marker Genes per Cluster")
+
+# Optionally, visualize the top marker genes
+# Example: FeaturePlot for top marker genes
+FeaturePlot(all, features = top_markers$gene, reduction = "umap", label = TRUE)
+
+
